@@ -55,6 +55,8 @@ esp_err_t NfcController::init() {
   conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
   conf.master.clk_speed = 100000;
 
+  i2c_driver_delete(i2c_port_);
+
   esp_err_t err = i2c_param_config(i2c_port_, &conf);
   if (err != ESP_OK) return err;
 
