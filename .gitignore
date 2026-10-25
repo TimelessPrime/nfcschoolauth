@@ -1,0 +1,7 @@
+build/
+sdkconfig.old
+.cache/
+.clangd/
+compile_commands.json
+backend/
+main/config/config.json

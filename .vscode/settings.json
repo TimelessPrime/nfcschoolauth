@@ -1,0 +1,12 @@
+{
+    "idf.flashType": "UART",
+    "idf.currentSetup": "/home/khang/.espressif/v6.1/esp-idf",
+    "idf.port": "/dev/ttyUSB0",
+    "idf.flashBaudRate": "115200",
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build",
+        "--query-driver=/home/khang/.espressif/tools/**/bin/*",
+        "--background-index",
+        "--header-insertion=never"
+    ]
+}
