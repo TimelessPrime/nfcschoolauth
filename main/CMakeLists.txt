@@ -18,13 +18,13 @@ get_filename_component(NET_DIR "network" ABSOLUTE)
 get_filename_component(NFC_DIR "nfc" ABSOLUTE)
 get_filename_component(SPK_DIR "speaker" ABSOLUTE)
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/config/config.json")
-    set(EMBED_CONFIG "config/config.json")
-else()
-    set(EMBED_CONFIG "config/config.json.example")
+if(NOT EXISTS "${COMPONENT_DIR}/config/config.json")
+    configure_file("${COMPONENT_DIR}/config/config.json.example" "${COMPONENT_DIR}/config/config.json" COPYONLY)
 endif()
+
 
 idf_component_register(SRCS ${SOURCES}
     INCLUDE_DIRS "." ${CFG_DIR} ${LED_DIR} ${LOG_DIR} ${NET_DIR} ${NFC_DIR} ${SPK_DIR}
-    EMBED_TXTFILES ${EMBED_CONFIG}
+    EMBED_TXTFILES "config/config.json"
 )
+
