@@ -644,8 +644,7 @@ CONFIG_ESP_ROM_BOOTLOADER_OFFSET_FLASH=0x1000
 #
 # Serial flasher config
 #
-# default:
-# CONFIG_ESPTOOLPY_NO_STUB is not set
+CONFIG_ESPTOOLPY_NO_STUB=y
 # default:
 # CONFIG_ESPTOOLPY_FLASHMODE_QIO is not set
 # default:
