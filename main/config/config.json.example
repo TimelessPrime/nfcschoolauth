@@ -1,0 +1,39 @@
+{
+  "wifi": {
+    "ssid": "YOUR_WIFI_SSID",
+    "password": "YOUR_WIFI_PASSWORD",
+    "auto_connect": true
+  },
+  "ap": {
+    "ssid": "ESP32-Config",
+    "password": "YOUR_AP_PASSWORD",
+    "channel": 1,
+    "max_connections": 1
+  },
+  "server": {
+    "host": "nfc-server.local",
+    "http_port": 5000,
+    "tcp_port": 1337,
+    "port": 5000,
+    "endpoint": "/api/scan",
+    "auth_token": "YOUR_AUTH_TOKEN"
+  },
+  "gpio": {
+    "nfc_sda": 21,
+    "nfc_scl": 22,
+    "nfc_irq": 16,
+    "buzzer": 26,
+    "led_idle": 32,
+    "led_success": 33,
+    "led_error": 25
+  },
+  "device": {
+    "device_id": "ESP32_NFC_01",
+    "location": "Cổng trường"
+  },
+  "scan": {
+    "cooldown_ms": 500,
+    "release_timeout_ms": 100,
+    "feedback_duration_ms": 500
+  }
+}
