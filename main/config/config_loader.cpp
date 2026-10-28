@@ -332,28 +332,14 @@ esp_err_t ConfigLoader::load() {
       std::vector<char> buf(req_size);
       if (nvs_get_str(handle, NVS_CONFIG_KEY, buf.data(), &req_size) == ESP_OK) {
         std::string nvs_json(buf.data());
-        std::string nvs_ssid = get_json_val(nvs_json, "ssid");
-        std::string nvs_pass = get_json_val(nvs_json, "password");
-        std::string nvs_host = get_json_val(nvs_json, "host");
-        std::string nvs_tcp = get_json_val(nvs_json, "tcp_port");
-        std::string nvs_token = get_json_val(nvs_json, "auth_token");
-
-        if (!nvs_ssid.empty()) {
-          config_.wifi.ssid = nvs_ssid;
-          config_.wifi.password = nvs_pass;
+        parse_json(nvs_json);
+        if (!config_.wifi.ssid.empty()) {
           config_.wifi.auto_connect = true;
-          ESP_LOGI(TAG, "Ghi de Wi-Fi tu NVS: SSID [%s]", nvs_ssid.c_str());
         }
-        if (!nvs_host.empty() && nvs_host != "192.168.1.100") {
-          config_.server.host = nvs_host;
-          ESP_LOGI(TAG, "Ghi de Server Host tu NVS Web Portal: [%s]", nvs_host.c_str());
-        }
-        if (!nvs_tcp.empty()) {
-          config_.server.tcp_port = (uint16_t)std::strtoul(nvs_tcp.c_str(), nullptr, 10);
-        }
-        if (!nvs_token.empty()) {
-          config_.server.auth_token = nvs_token;
-        }
+        ESP_LOGI(TAG, "Da khoi phuc toan bo cau hinh dong tu NVS: SSID [%s], Cooldown [%lu ms], Vi tri [%s]",
+                 config_.wifi.ssid.c_str(),
+                 (unsigned long)config_.scan.cooldown_ms,
+                 config_.device.location.c_str());
       }
     }
     nvs_close(handle);

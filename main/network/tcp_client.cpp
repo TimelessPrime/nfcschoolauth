@@ -11,6 +11,8 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_wifi.h"
+#include "esp_system.h"
+#include "wifi_manager.h"
 #include <cstring>
 
 static const char *TAG = "TCP_CLIENT";
@@ -383,7 +385,156 @@ void TcpClient::disconnect_socket() {
   }
   connected_ = false;
   authenticated_ = false;
+  rx_cmd_buffer_.clear();
   if (socket_mutex_) xSemaphoreGive(socket_mutex_);
+}
+
+void TcpClient::handle_server_command(const std::string &cmd_json) {
+  std::string action = extract_json_field(cmd_json, "action");
+  if (action.empty()) action = extract_json_field(cmd_json, "cmd");
+
+  if (action == "pong" || action == "ping_ack" || action == "heartbeat_ack") {
+    return;
+  }
+
+  const auto &current_cfg = ConfigLoader::instance().get_config();
+  std::string target_dev = extract_json_field(cmd_json, "device_id");
+
+  if (!target_dev.empty() && target_dev != "all" && target_dev != current_cfg.device.device_id) {
+    ESP_LOGD(TAG, "Bo qua lenh cho thiet bi khac: [%s] (hien tai la [%s])",
+             target_dev.c_str(), current_cfg.device.device_id.c_str());
+    return;
+  }
+
+  if (action == "update_config" || action == "set_config") {
+    ESP_LOGI(TAG, "Nhan lenh cap nhat cau hinh tu Server/Discord!");
+    auto &cfg = ConfigLoader::instance().get_config();
+    bool has_changes = false;
+
+    std::string cooldown_str = extract_json_field(cmd_json, "cooldown_ms");
+    if (!cooldown_str.empty()) {
+      cfg.scan.cooldown_ms = (uint32_t)std::strtoul(cooldown_str.c_str(), nullptr, 10);
+      has_changes = true;
+    }
+
+    std::string feedback_str = extract_json_field(cmd_json, "feedback_duration_ms");
+    if (!feedback_str.empty()) {
+      cfg.scan.feedback_duration_ms = (uint32_t)std::strtoul(feedback_str.c_str(), nullptr, 10);
+      has_changes = true;
+    }
+
+    std::string release_str = extract_json_field(cmd_json, "release_timeout_ms");
+    if (!release_str.empty()) {
+      cfg.scan.release_timeout_ms = (uint32_t)std::strtoul(release_str.c_str(), nullptr, 10);
+      has_changes = true;
+    }
+
+    std::string loc_str = extract_json_field(cmd_json, "location");
+    if (!loc_str.empty()) {
+      cfg.device.location = loc_str;
+      has_changes = true;
+    }
+
+    std::string new_dev_id = extract_json_field(cmd_json, "new_device_id");
+    if (!new_dev_id.empty()) {
+      cfg.device.device_id = new_dev_id;
+      has_changes = true;
+    }
+
+    std::string wifi_ssid = extract_json_field(cmd_json, "wifi_ssid");
+    std::string wifi_pass = extract_json_field(cmd_json, "wifi_password");
+    if (!wifi_ssid.empty()) {
+      cfg.wifi.ssid = wifi_ssid;
+      cfg.wifi.password = wifi_pass;
+      cfg.wifi.auto_connect = true;
+      has_changes = true;
+      WifiManager::save_credentials(wifi_ssid, wifi_pass);
+    }
+
+    std::string srv_host = extract_json_field(cmd_json, "server_host");
+    if (!srv_host.empty()) {
+      cfg.server.host = srv_host;
+      has_changes = true;
+    }
+
+    std::string srv_port = extract_json_field(cmd_json, "tcp_port");
+    if (!srv_port.empty()) {
+      cfg.server.tcp_port = (uint16_t)std::strtoul(srv_port.c_str(), nullptr, 10);
+      has_changes = true;
+    }
+
+    if (has_changes) {
+      ConfigLoader::instance().save_config(cfg);
+      ESP_LOGI(TAG, "Da ghi cau hinh moi vao NVS Flash: Cooldown=%lu ms, Vi tri=%s",
+               (unsigned long)cfg.scan.cooldown_ms, cfg.device.location.c_str());
+    }
+
+    std::string ack = "{\"action\":\"config_ack\",\"device_id\":\"";
+    ack += cfg.device.device_id;
+    ack += "\",\"status\":\"SUCCESS\",\"message\":\"Da cap nhat cau hinh thanh cong\"";
+    ack += ",\"cooldown_ms\":";
+    ack += std::to_string(cfg.scan.cooldown_ms);
+    ack += ",\"feedback_duration_ms\":";
+    ack += std::to_string(cfg.scan.feedback_duration_ms);
+    ack += ",\"location\":\"";
+    ack += cfg.device.location;
+    ack += "\"}\n";
+
+    if (socket_mutex_ && xSemaphoreTake(socket_mutex_, pdMS_TO_TICKS(500)) == pdTRUE) {
+      send(socket_fd_, ack.c_str(), ack.length(), 0);
+      xSemaphoreGive(socket_mutex_);
+    }
+
+    std::string reboot_str = extract_json_field(cmd_json, "reboot");
+    if (reboot_str == "true" || reboot_str == "1") {
+      ESP_LOGW(TAG, "Yeu cau reboot sau khi doi cau hinh. Khoi dong lai sau 1 giay...");
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      esp_restart();
+    }
+    return;
+  }
+
+  if (action == "reboot") {
+    ESP_LOGW(TAG, "Nhan lenh REBOOT tu Server/Discord!");
+    std::string ack = "{\"action\":\"reboot_ack\",\"device_id\":\"";
+    ack += current_cfg.device.device_id;
+    ack += "\",\"status\":\"SUCCESS\",\"message\":\"Dau doc dang khoi dong lai...\"}\n";
+
+    if (socket_mutex_ && xSemaphoreTake(socket_mutex_, pdMS_TO_TICKS(500)) == pdTRUE) {
+      send(socket_fd_, ack.c_str(), ack.length(), 0);
+      xSemaphoreGive(socket_mutex_);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(800));
+    esp_restart();
+    return;
+  }
+
+  if (action == "get_config") {
+    std::string resp = "{\"action\":\"config_info\",\"device_id\":\"";
+    resp += current_cfg.device.device_id;
+    resp += "\",\"location\":\"";
+    resp += current_cfg.device.location;
+    resp += "\",\"cooldown_ms\":";
+    resp += std::to_string(current_cfg.scan.cooldown_ms);
+    resp += ",\"feedback_duration_ms\":";
+    resp += std::to_string(current_cfg.scan.feedback_duration_ms);
+    resp += ",\"release_timeout_ms\":";
+    resp += std::to_string(current_cfg.scan.release_timeout_ms);
+    resp += ",\"wifi_ssid\":\"";
+    resp += current_cfg.wifi.ssid;
+    resp += "\",\"server_host\":\"";
+    resp += current_cfg.server.host;
+    resp += "\",\"tcp_port\":";
+    resp += std::to_string(current_cfg.server.tcp_port);
+    resp += "}\n";
+
+    if (socket_mutex_ && xSemaphoreTake(socket_mutex_, pdMS_TO_TICKS(500)) == pdTRUE) {
+      send(socket_fd_, resp.c_str(), resp.length(), 0);
+      xSemaphoreGive(socket_mutex_);
+    }
+    return;
+  }
 }
 
 void TcpClient::run() {
@@ -497,9 +648,9 @@ void TcpClient::run() {
       }
     }
 
-    // Đọc dữ liệu phản hồi (Pong / ACK) không chặn và phát hiện ngắt kết nối từ Server
+    // Đọc dữ liệu phản hồi (Pong / ACK / Lệnh từ Server hoặc Bot Discord) không chặn
     if (connected_ && socket_fd_ >= 0) {
-      char drain_buf[256];
+      char drain_buf[512];
       int r = recv(socket_fd_, drain_buf, sizeof(drain_buf) - 1, MSG_DONTWAIT);
       if (r == 0) {
         ESP_LOGW(TAG, "Server da chu dong ngat ket noi TCP");
@@ -509,6 +660,18 @@ void TcpClient::run() {
         ESP_LOGW(TAG, "Socket error tren recv: %d", errno);
         disconnect_socket();
         continue;
+      } else if (r > 0) {
+        drain_buf[r] = '\0';
+        rx_cmd_buffer_ += drain_buf;
+        size_t newline_pos;
+        while ((newline_pos = rx_cmd_buffer_.find('\n')) != std::string::npos) {
+          std::string line = rx_cmd_buffer_.substr(0, newline_pos);
+          rx_cmd_buffer_.erase(0, newline_pos + 1);
+          while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+          if (!line.empty()) {
+            handle_server_command(line);
+          }
+        }
       }
     }
 

@@ -45,12 +45,14 @@ private:
   bool connect_to_backend();
   bool perform_handshake();
   void disconnect_socket();
+  void handle_server_command(const std::string &cmd_json);
 
   int socket_fd_;
   bool running_;
   bool connected_;
   bool authenticated_;
   std::string session_token_;
+  std::string rx_cmd_buffer_;
 
   QueueHandle_t log_queue_;
   QueueHandle_t offline_queue_;
