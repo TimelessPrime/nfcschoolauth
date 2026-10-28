@@ -10,6 +10,7 @@
 #include "mbedtls/md.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+#include "esp_wifi.h"
 #include <cstring>
 
 static const char *TAG = "TCP_CLIENT";
@@ -260,6 +261,15 @@ bool TcpClient::connect_to_backend() {
   setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
+  int keepalive = 1;
+  int keepidle = 10;
+  int keepinterval = 5;
+  int keepcount = 3;
+  setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
+  setsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
+  setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, &keepinterval, sizeof(keepinterval));
+  setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, &keepcount, sizeof(keepcount));
+
   int err = connect(s, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
   if (err != 0) {
     close(s);
@@ -377,6 +387,8 @@ void TcpClient::disconnect_socket() {
 }
 
 void TcpClient::run() {
+  uint32_t last_heartbeat_ms = 0;
+
   while (running_) {
     if (!connected_ || socket_fd_ < 0) {
       if (!connect_to_backend() || !perform_handshake()) {
@@ -384,6 +396,7 @@ void TcpClient::run() {
         vTaskDelay(pdMS_TO_TICKS(3000));
         continue;
       }
+      last_heartbeat_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
     }
 
     OfflineScanItem off_item;
@@ -444,6 +457,58 @@ void TcpClient::run() {
           disconnect_socket();
           break;
         }
+      }
+    }
+
+    // Heartbeat Ping định kỳ mỗi 10 giây kèm dữ liệu tình trạng phần cứng (Telemetry)
+    uint32_t current_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    if (connected_ && authenticated_ && (current_ms - last_heartbeat_ms >= 10000)) {
+      last_heartbeat_ms = current_ms;
+      const auto &cfg = ConfigLoader::instance().get_config();
+      int rssi = -100;
+      wifi_ap_record_t ap_info;
+      if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        rssi = ap_info.rssi;
+      }
+      uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+      uint32_t free_heap = esp_get_free_heap_size();
+      size_t pending_off = uxQueueMessagesWaiting(offline_queue_);
+
+      std::string ping_json = "{\"action\":\"ping\",\"device_id\":\"";
+      ping_json += cfg.device.device_id;
+      ping_json += "\",\"uptime_s\":";
+      ping_json += std::to_string(uptime_s);
+      ping_json += ",\"free_heap\":";
+      ping_json += std::to_string(free_heap);
+      ping_json += ",\"rssi\":";
+      ping_json += std::to_string(rssi);
+      ping_json += ",\"pending_offline\":";
+      ping_json += std::to_string(pending_off);
+      ping_json += "}\n";
+
+      if (socket_mutex_ && xSemaphoreTake(socket_mutex_, pdMS_TO_TICKS(200)) == pdTRUE) {
+        int res = send(socket_fd_, ping_json.c_str(), ping_json.length(), 0);
+        xSemaphoreGive(socket_mutex_);
+        if (res < 0) {
+          ESP_LOGW(TAG, "Loi khi gui Heartbeat Ping, ngat socket de ket noi lai");
+          disconnect_socket();
+          continue;
+        }
+      }
+    }
+
+    // Đọc dữ liệu phản hồi (Pong / ACK) không chặn và phát hiện ngắt kết nối từ Server
+    if (connected_ && socket_fd_ >= 0) {
+      char drain_buf[256];
+      int r = recv(socket_fd_, drain_buf, sizeof(drain_buf) - 1, MSG_DONTWAIT);
+      if (r == 0) {
+        ESP_LOGW(TAG, "Server da chu dong ngat ket noi TCP");
+        disconnect_socket();
+        continue;
+      } else if (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        ESP_LOGW(TAG, "Socket error tren recv: %d", errno);
+        disconnect_socket();
+        continue;
       }
     }
 
