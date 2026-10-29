@@ -1,5 +1,6 @@
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "soc/soc.h"
@@ -16,6 +17,13 @@ static const char *TAG = "APP_MAIN";
 
 extern "C" void app_main(void) {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(ret);
 
   ESP_LOGI(TAG, "NFC School Auth khoi dong (Brownout Detector disabled)");
 

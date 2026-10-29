@@ -11,6 +11,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_wifi.h"
+#include "esp_netif.h"
 #include "esp_system.h"
 #include "wifi_manager.h"
 #include <cstring>
@@ -542,6 +543,13 @@ void TcpClient::run() {
 
   while (running_) {
     if (!connected_ || socket_fd_ < 0) {
+      esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+      esp_netif_ip_info_t ip_info;
+      if (!netif || esp_netif_get_ip_info(netif, &ip_info) != ESP_OK || ip_info.ip.addr == 0) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        continue;
+      }
+
       if (!connect_to_backend() || !perform_handshake()) {
         disconnect_socket();
         vTaskDelay(pdMS_TO_TICKS(3000));

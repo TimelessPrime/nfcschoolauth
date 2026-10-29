@@ -117,8 +117,14 @@ esp_err_t WifiManager::init() {
     return ret;
   }
 
-  ESP_ERROR_CHECK(esp_netif_init());
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  esp_err_t netif_err = esp_netif_init();
+  if (netif_err != ESP_OK && netif_err != ESP_ERR_INVALID_STATE) {
+    ESP_ERROR_CHECK(netif_err);
+  }
+  esp_err_t loop_err = esp_event_loop_create_default();
+  if (loop_err != ESP_OK && loop_err != ESP_ERR_INVALID_STATE) {
+    ESP_ERROR_CHECK(loop_err);
+  }
 
   sta_netif_ = esp_netif_create_default_wifi_sta();
   ap_netif_  = esp_netif_create_default_wifi_ap();
@@ -134,7 +140,7 @@ esp_err_t WifiManager::init() {
                                                       &wifi_event_handler, this, NULL));
 
   ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_start());
 
   esp_wifi_set_max_tx_power(60);
@@ -271,11 +277,10 @@ bool WifiManager::connect(const std::string &ssid, const std::string &password, 
 
   wifi_config_t wifi_cfg;
   memset(&wifi_cfg, 0, sizeof(wifi_cfg));
-  strncpy((char *)wifi_cfg.sta.ssid, ssid.c_str(), sizeof(wifi_cfg.sta.ssid));
-  strncpy((char *)wifi_cfg.sta.password, password.c_str(), sizeof(wifi_cfg.sta.password));
+  strncpy((char *)wifi_cfg.sta.ssid, ssid.c_str(), sizeof(wifi_cfg.sta.ssid) - 1);
+  strncpy((char *)wifi_cfg.sta.password, password.c_str(), sizeof(wifi_cfg.sta.password) - 1);
   wifi_cfg.sta.threshold.authmode = WIFI_AUTH_OPEN;
-  wifi_cfg.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
-  wifi_cfg.sta.pmf_cfg.capable = true;
+  wifi_cfg.sta.pmf_cfg.capable = false;
   wifi_cfg.sta.pmf_cfg.required = false;
 
   ESP_LOGI(TAG, "Ket noi toi AP: %s...", ssid.c_str());
