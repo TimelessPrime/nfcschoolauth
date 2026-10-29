@@ -240,16 +240,16 @@ bool TcpClient::connect_to_backend() {
   dest_addr.sin_port = htons(cfg.server.tcp_port);
 
   if (dest_addr.sin_addr.s_addr == INADDR_NONE) {
-    ESP_LOGI(TAG, "Dang phan giai Hostname/mDNS [%s]...", cfg.server.host.c_str());
+    ESP_LOGI(TAG, "Dang phan giai Hostname [%s] qua DNS...", cfg.server.host.c_str());
     struct hostent *he = gethostbyname(cfg.server.host.c_str());
     if (he != nullptr && he->h_addr_list[0] != nullptr) {
       dest_addr.sin_addr.s_addr = *(reinterpret_cast<in_addr_t *>(he->h_addr_list[0]));
       char resolved_ip[INET_ADDRSTRLEN];
       inet_ntop(AF_INET, &dest_addr.sin_addr, resolved_ip, sizeof(resolved_ip));
-      ESP_LOGI(TAG, "Phan giai mDNS thanh cong: %s -> %s", cfg.server.host.c_str(), resolved_ip);
+      ESP_LOGI(TAG, "Phan giai DNS thanh cong: %s -> %s", cfg.server.host.c_str(), resolved_ip);
     } else {
-      ESP_LOGW(TAG, "Chua phan giai duoc [%s], ket noi theo dia chi LAN 192.168.0.222", cfg.server.host.c_str());
-      dest_addr.sin_addr.s_addr = inet_addr("192.168.0.222");
+      ESP_LOGW(TAG, "Khong the phan giai Hostname [%s]. Vui long dat dia chi IP ro rang trong config.", cfg.server.host.c_str());
+      return false;
     }
   }
 
